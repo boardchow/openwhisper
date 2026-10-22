@@ -79,21 +79,32 @@ fn mix(data: &[f32], channels: usize) -> (Vec<f32>, f32) {
 /// Whisper invents text ("Thank you.") for silence, typically the gap between
 /// the last word and the stop tap. Returns an empty slice if nothing is loud.
 pub fn trim_silence(samples: &[f32]) -> &[f32] {
-    const FRAME: usize = WHISPER_RATE as usize / 50; // 20 ms
     const MARGIN: usize = WHISPER_RATE as usize * 3 / 10; // 300 ms
+    let loud = loud_frames(samples);
+    let (Some(first), Some(last)) = (loud.iter().position(|l| *l), loud.iter().rposition(|l| *l)) else {
+        return &[];
+    };
+    let start = (first * FRAME).saturating_sub(MARGIN);
+    let end = ((last + 1) * FRAME + MARGIN).min(samples.len());
+    &samples[start..end]
+}
+
+/// How many samples of `samples` are speech (loud frames), wherever they are.
+pub fn speech_len(samples: &[f32]) -> usize {
+    loud_frames(samples).iter().filter(|l| **l).count() * FRAME
+}
+
+const FRAME: usize = WHISPER_RATE as usize / 50; // 20 ms
+
+/// Which 20 ms frames are speech rather than silence.
+fn loud_frames(samples: &[f32]) -> Vec<bool> {
     let rms: Vec<f32> = samples
         .chunks(FRAME)
         .map(|f| (f.iter().map(|s| s * s).sum::<f32>() / f.len() as f32).sqrt())
         .collect();
     let peak = rms.iter().copied().fold(0.0, f32::max);
     // calibration: speech peaks well above 0.02 on a laptop mic; breath and room noise stay under 5% of the peak.
-    let loud = |r: &&f32| **r > (peak * 0.05).max(0.002);
-    let (Some(first), Some(last)) = (rms.iter().position(|r| loud(&r)), rms.iter().rposition(|r| loud(&r))) else {
-        return &[];
-    };
-    let start = (first * FRAME).saturating_sub(MARGIN);
-    let end = ((last + 1) * FRAME + MARGIN).min(samples.len());
-    &samples[start..end]
+    rms.iter().map(|r| *r > (peak * 0.05).max(0.002)).collect()
 }
 
 // shortcut: linear interpolation without a low-pass filter; fine for speech into whisper, swap for a sinc resampler if accuracy suffers.
@@ -116,7 +127,17 @@ fn resample(input: &[f32], from: u32, to: u32) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{mix, resample, trim_silence};
+    use super::{mix, resample, speech_len, trim_silence};
+
+    #[test]
+    fn speech_len_counts_only_speech_not_the_gap_between() {
+        let second = 16_000;
+        let mut clip = vec![0.3f32; second / 10]; // a click
+        clip.extend(vec![0.0005; 2 * second]); // a long pause
+        clip.extend(vec![0.3; second / 5]); // a syllable
+        assert!(trim_silence(&clip).len() > 2 * second); // spans the pause
+        assert_eq!(speech_len(&clip), 3 * second / 10); // but holds 0.3 s of sound
+    }
 
     #[test]
     fn mix_downmixes_to_mono_and_measures_rms() {

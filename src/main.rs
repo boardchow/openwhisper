@@ -37,9 +37,8 @@ const KEY_DELETE: u16 = 51;
 // shortcut: every pass re-transcribes the whole clip, so passes slow down on dictations over a
 // minute or so; upgrade by dropping audio already committed, using segment timestamps.
 const PASS_EVERY: Duration = Duration::from_millis(150);
-// Auto-detect waits for ~1.5 s of speech (2 s including the margins trim_silence keeps):
-// on a breath or a pause it guesses anything.
-const DETECT_AFTER: usize = audio::WHISPER_RATE as usize * 2;
+// Auto-detect waits for 1.5 s of actual speech: on a click, a breath or a syllable it guesses anything.
+const DETECT_AFTER: usize = audio::WHISPER_RATE as usize * 3 / 2;
 
 type Whisper = Arc<Mutex<WhisperState>>;
 
@@ -55,8 +54,10 @@ struct Live {
     last: String,
     pass: Option<Receiver<String>>,
     pass_at: Instant,
-    // The user's languages, narrowed to one once detected from the first 1.5 s
-    // of speech; auto-detecting on every pass would cost a second encoder run.
+    // The user's languages; the final pass detects among them over the whole clip.
+    user_langs: Vec<&'static str>,
+    // Those, narrowed to one for the live passes once detected from the first
+    // 1.5 s of speech; auto-detecting on every pass would cost a second encoder run.
     langs: Vec<&'static str>,
     detecting: Option<Receiver<&'static str>>,
     // The app being dictated into; keystrokes go to whichever app is frontmost.
@@ -84,6 +85,7 @@ impl Live {
             last: String::new(),
             pass: None,
             pass_at: Instant::now(),
+            user_langs: langs.clone(),
             langs,
             detecting: None,
             app,
@@ -226,7 +228,7 @@ fn main() {
                     }
                 },
                 State::Recording { rec, live } => {
-                    let (samples, langs) = (rec.finish(), live.langs.clone());
+                    let (samples, langs) = (rec.finish(), live.user_langs.clone());
                     State::Transcribing {
                         rx: spawn(&final_model, move |s| transcribe(s, samples, &langs)),
                         live,
@@ -243,13 +245,15 @@ fn main() {
                 pill.draw_level(f32::from_bits(level.load(Ordering::Relaxed)), t);
                 match &live.detecting {
                     _ if live.langs.len() == 1 => {}
-                    None => {
+                    None if live.pass_at.elapsed() >= PASS_EVERY => {
+                        live.pass_at = Instant::now();
                         let samples = rec.snapshot();
-                        if audio::trim_silence(&samples).len() >= DETECT_AFTER {
+                        if audio::speech_len(&samples) >= DETECT_AFTER {
                             let langs = live.langs.clone();
                             live.detecting = Some(spawn(&live_model, move |s| detect_language(s, &samples, &langs)));
                         }
                     }
+                    None => {}
                     Some(rx) => match rx.try_recv() {
                         Ok(lang) => live.langs = vec![lang],
                         Err(TryRecvError::Disconnected) => live.langs.truncate(1),
