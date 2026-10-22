@@ -47,7 +47,7 @@ fn parse_languages(saved: Option<&str>, main: Option<&str>) -> Vec<&'static str>
     // Like Wispr Flow: by default just the main language, so nothing is auto-detected until the user ticks more.
     let wanted: Vec<&str> = match saved {
         Some(list) => list.split(',').collect(),
-        None => main.map(|m| m.get(..2).unwrap_or(m)).into_iter().collect(),
+        None => main.and_then(|m| m.split(['-', '_']).next()).into_iter().collect(),
     };
     let picked: Vec<_> = LANGUAGES
         .iter()
@@ -202,6 +202,8 @@ mod tests {
         assert_eq!(parse_languages(Some("fr,en,xx"), Some("de-DE")), ["en", "fr"]); // menu order, unknown dropped
         assert_eq!(parse_languages(None, Some("fr-ES")), ["fr"]);
         assert_eq!(parse_languages(None, Some("x")), ["en"]);
+        assert_eq!(parse_languages(None, Some("fil-PH")), ["en"]); // not Finnish ("fi")
+        assert_eq!(parse_languages(None, Some("pt_BR")), ["pt"]);
         assert_eq!(parse_languages(None, None), ["en"]);
         assert_eq!(parse_languages(Some(""), Some("fr")), ["en"]);
     }
