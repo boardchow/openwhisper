@@ -3,5 +3,6 @@
 mod audio;
 mod hotkey;
 mod live;
+mod overlay;
 
 fn main() {}
