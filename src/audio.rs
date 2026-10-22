@@ -56,7 +56,9 @@ pub fn start(level: Arc<AtomicU32>) -> Result<Recording, String> {
 impl Recording {
     /// Everything recorded so far as 16 kHz mono, while recording continues.
     pub fn snapshot(&self) -> Vec<f32> {
-        resample(&self.buf.lock().unwrap(), self.rate, WHISPER_RATE)
+        // Copy, then resample outside the lock the real-time audio callback needs.
+        let samples = self.buf.lock().unwrap().clone();
+        resample(&samples, self.rate, WHISPER_RATE)
     }
 
     /// Stops the microphone and returns 16 kHz mono samples.
