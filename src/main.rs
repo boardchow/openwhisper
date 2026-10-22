@@ -244,7 +244,7 @@ fn main() {
             State::Recording { rec, live } => {
                 pill.draw_level(f32::from_bits(level.load(Ordering::Relaxed)), t);
                 match &live.detecting {
-                    _ if live.langs.len() == 1 => {}
+                    _ if live.langs.len() == 1 || live.to_clipboard => {}
                     None if live.pass_at.elapsed() >= PASS_EVERY => {
                         live.pass_at = Instant::now();
                         let samples = rec.snapshot();
@@ -272,7 +272,12 @@ fn main() {
                         Err(TryRecvError::Empty) => {}
                     }
                 }
-                if live.langs.len() == 1 && live.pass.is_none() && live.pass_at.elapsed() >= PASS_EVERY {
+                // Live passes only matter when there's a field to type into.
+                if live.langs.len() == 1
+                    && !live.to_clipboard
+                    && live.pass.is_none()
+                    && live.pass_at.elapsed() >= PASS_EVERY
+                {
                     let (samples, langs) = (rec.snapshot(), live.langs.clone());
                     live.pass = Some(spawn(&live_model, move |s| transcribe(s, samples, &langs)));
                     live.pass_at = Instant::now();
