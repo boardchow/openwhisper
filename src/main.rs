@@ -2,5 +2,6 @@
 
 mod audio;
 mod hotkey;
+mod live;
 
 fn main() {}
