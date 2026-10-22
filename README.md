@@ -16,7 +16,7 @@ No cloud. No account. No subscription. No word limits.
 ## How it works
 
 1. **Tap to record.** A native `CGEventTap` catches a quick tap of the shortcut key; the key keeps working normally in shortcuts like ⌘C.
-2. **Speak.** The microphone is captured at 16 kHz, and a lime pill with live bars shows it's listening. It never takes focus from your text field.
+2. **Speak.** The microphone is recorded and resampled to the 16 kHz whisper expects, and a lime pill with live bars shows it's listening. It never takes focus from your text field.
 3. **Watch it type.** [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (Metal) re-transcribes several times a second with a fast model, and words are typed as soon as two passes agree on them.
 4. **Tap again.** A final pass with `large-v3-turbo` corrects whatever needs it. **Esc** cancels and erases what was typed.
 
@@ -53,11 +53,13 @@ On first launch, macOS asks for two permissions:
 2. Tap **right ⌘** and speak.
 3. Tap **right ⌘** again to finish, or press **Esc** to cancel.
 
+On the desktop, or if you switch to another app while speaking, nothing more is typed: the final text is copied to the clipboard instead.
+
 From the waveform icon in the menu bar:
 
 | Setting | |
 | --- | --- |
-| **Languages** | The languages you speak. One is always used; with several, each recording picks among them. Defaults to your Mac's language. |
+| **Languages** | The languages you speak, among English, French, Spanish, German, Italian, Portuguese, Dutch, Japanese, Chinese and Arabic. One is always used; with several, each recording picks among them. Defaults to your Mac's language. |
 | **Shortcut** | Right ⌘, right ⌥, right ⌃ or fn. For fn, set System Settings → Keyboard → "Press 🌐 key to" → Do Nothing. |
 
 The microphone is whichever input macOS has selected.
