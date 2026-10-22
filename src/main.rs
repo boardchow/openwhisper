@@ -4,5 +4,6 @@ mod audio;
 mod hotkey;
 mod live;
 mod overlay;
+mod settings;
 
 fn main() {}
