@@ -444,7 +444,9 @@ fn fatal(mtm: MainThreadMarker, message: &str) {
     let alert = NSAlert::new(mtm);
     alert.setMessageText(ns_string!("OpenWhisper"));
     alert.setInformativeText(&NSString::from_str(message));
-    NSApplication::sharedApplication(mtm).activate();
+    // `activate` only exists from macOS 14; this works from 13, the app's minimum.
+    #[allow(deprecated)]
+    NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
     alert.runModal();
 }
 
