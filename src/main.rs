@@ -11,7 +11,7 @@ mod settings;
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use block2::RcBlock;
@@ -306,7 +306,8 @@ fn spawn<T: Send + 'static>(
     let (tx, rx) = mpsc::channel();
     let whisper = whisper.clone();
     std::thread::spawn(move || {
-        let _ = tx.send(job(&mut whisper.lock().unwrap()));
+        // A panicked job must not poison the model for every later one.
+        let _ = tx.send(job(&mut whisper.lock().unwrap_or_else(PoisonError::into_inner)));
     });
     rx
 }
