@@ -368,6 +368,7 @@ fn transcribe(state: &mut WhisperState, samples: Vec<f32>, langs: &[&'static str
     params.set_language(Some(lang));
     params.set_no_context(true);
     params.set_suppress_blank(true);
+    params.set_suppress_nst(true); // no "[Music]", "(silence)"…
     params.set_n_threads(threads() as i32);
     params.set_print_progress(false);
     params.set_print_realtime(false);
