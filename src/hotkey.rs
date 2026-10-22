@@ -46,7 +46,15 @@ pub fn install() -> Option<CGEventTap<'static>> {
         CGEventTapLocation::Session,
         CGEventTapPlacement::HeadInsertEventTap,
         CGEventTapOptions::Default, // not ListenOnly: Esc must be droppable
-        vec![CGEventType::FlagsChanged, CGEventType::KeyDown],
+        // Clicks and scrolls are watched too, so ⌘-click or ⌘-scroll doesn't count as a tap.
+        vec![
+            CGEventType::FlagsChanged,
+            CGEventType::KeyDown,
+            CGEventType::LeftMouseDown,
+            CGEventType::RightMouseDown,
+            CGEventType::OtherMouseDown,
+            CGEventType::ScrollWheel,
+        ],
         move |_, kind, event| {
             let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
             let mut k = keys.get();
@@ -185,6 +193,15 @@ mod tests {
             ],
         );
         assert_eq!(actions[4], Action::Tapped);
+    }
+
+    #[test]
+    fn a_click_while_held_makes_it_a_modifier() {
+        // Mouse events carry no keycode (0) and aren't key presses.
+        assert_eq!(
+            play(false, &[(false, CMD, 0), (false, 0, 50), (false, CMD, 100)])[2],
+            Action::Pass
+        );
     }
 
     #[test]
