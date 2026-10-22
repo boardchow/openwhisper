@@ -26,7 +26,13 @@ app:
 # large-v3-turbo (1.5 GB) for the final transcript, small (466 MB) for live typing.
 model:
 	@mkdir -p "$(MODEL_DIR)"
-	@for m in $(MODELS); do test -f "$(MODEL_DIR)/$$m" || curl -L --fail -o "$(MODEL_DIR)/$$m" "$(MODEL_URL)/$$m"; done
+	@# Download to .part and rename on success, so an interrupted download is retried, not kept.
+	@for m in $(MODELS); do \
+		test -f "$(MODEL_DIR)/$$m" || { \
+			curl -L --fail -C - -o "$(MODEL_DIR)/$$m.part" "$(MODEL_URL)/$$m" && \
+			mv "$(MODEL_DIR)/$$m.part" "$(MODEL_DIR)/$$m"; \
+		} || exit 1; \
+	done
 
 # Launch through `open` so macOS attributes permissions to the app, not the terminal.
 run: app model
@@ -40,7 +46,7 @@ install: app model
 	open /Applications/OpenWhisper.app
 
 test:
-	cargo test
+	cargo test --release
 
 clean:
 	rm -rf dist target
