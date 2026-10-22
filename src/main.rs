@@ -59,7 +59,11 @@ struct Live {
     // of speech; auto-detecting on every pass would cost a second encoder run.
     langs: Vec<&'static str>,
     detecting: Option<Receiver<&'static str>>,
-    // On the desktop there's no field, and keystrokes would trigger Finder's type-select.
+    // The app being dictated into; keystrokes go to whichever app is frontmost.
+    app: i32,
+    // Type nothing, and hand the final text over on the clipboard: on the desktop
+    // there's no field (keystrokes would trigger Finder's type-select), and once
+    // the user switches app, corrections and Esc would land in the wrong one.
     to_clipboard: bool,
 }
 
@@ -67,7 +71,7 @@ struct Live {
 type Edit = (usize, String);
 
 impl Live {
-    fn new(langs: Vec<&'static str>, to_clipboard: bool) -> Self {
+    fn new(langs: Vec<&'static str>, app: i32, to_clipboard: bool) -> Self {
         Live {
             typed: String::new(),
             last: String::new(),
@@ -75,6 +79,7 @@ impl Live {
             pass_at: Instant::now(),
             langs,
             detecting: None,
+            app,
             to_clipboard,
         }
     }
@@ -94,9 +99,15 @@ impl Live {
         (!text.is_empty()).then(|| live::edit(&self.typed, text))
     }
 
-    /// The edit that erases what was typed so far (Esc).
+    /// The edit that erases what was typed so far (Esc), unless the user has
+    /// moved to another app, which the backspaces would reach instead.
     fn cancel(&self) -> Edit {
-        (self.typed.chars().count(), String::new())
+        let typed = if self.to_clipboard {
+            0
+        } else {
+            self.typed.chars().count()
+        };
+        (typed, String::new())
     }
 }
 
@@ -170,6 +181,11 @@ fn main() {
         }
 
         let mut state = state.borrow_mut();
+        if let State::Recording { live, .. } | State::Transcribing { live, .. } = &mut *state
+            && frontmost_app() != live.app
+        {
+            live.to_clipboard = true;
+        }
         if hotkey::CANCELLED.swap(false, Ordering::SeqCst) {
             // Dropping the recording stops the mic; in-flight passes finish into closed channels.
             if let State::Recording { live, .. } | State::Transcribing { live, .. } =
@@ -187,7 +203,7 @@ fn main() {
                         pill.show();
                         State::Recording {
                             rec,
-                            live: Live::new(settings::languages(), frontmost_is_finder()),
+                            live: Live::new(settings::languages(), frontmost_app(), frontmost_is_finder()),
                         }
                     }
                     Err(e) => {
@@ -380,6 +396,12 @@ fn copy(text: &str) {
     pasteboard.setString_forType(&NSString::from_str(text), unsafe { NSPasteboardTypeString });
 }
 
+fn frontmost_app() -> i32 {
+    NSWorkspace::sharedWorkspace()
+        .frontmostApplication()
+        .map_or(-1, |a| a.processIdentifier())
+}
+
 fn frontmost_is_finder() -> bool {
     let front = NSWorkspace::sharedWorkspace().frontmostApplication();
     front
@@ -418,7 +440,7 @@ mod tests {
 
     #[test]
     fn live_types_agreed_words_then_the_final_correction() {
-        let mut live = Live::new(vec!["en"], false);
+        let mut live = Live::new(vec!["en"], 1, false);
         assert_eq!(live.commit("Hello world...".into()), None); // nothing agreed yet
         assert_eq!(live.commit("Hello world, how".into()), Some((0, "Hello".into())));
         assert_eq!(
@@ -431,8 +453,18 @@ mod tests {
     }
 
     #[test]
+    fn live_stops_typing_once_the_user_switches_app() {
+        let mut live = Live::new(vec!["en"], 1, false);
+        live.commit("Hello world".into());
+        live.commit("Hello world".into());
+        live.to_clipboard = true; // the tick saw another app come to the front
+        assert_eq!(live.commit("Hello world again".into()), None);
+        assert_eq!(live.cancel(), (0, String::new())); // no backspaces into the other app
+    }
+
+    #[test]
     fn live_types_nothing_on_the_desktop() {
-        let mut live = Live::new(vec!["en"], true);
+        let mut live = Live::new(vec!["en"], 1, true);
         live.commit("Hello world".into());
         assert_eq!(live.commit("Hello world".into()), None);
         assert_eq!(live.cancel(), (0, String::new()));
