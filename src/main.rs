@@ -70,6 +70,13 @@ struct Live {
 /// An edit in the focused field: delete this many characters, then type this.
 type Edit = (usize, String);
 
+/// What to do with the final transcript.
+#[derive(Debug, PartialEq)]
+enum Finish {
+    Type(Edit),
+    Copy(String),
+}
+
 impl Live {
     fn new(langs: Vec<&'static str>, app: i32, to_clipboard: bool) -> Self {
         Live {
@@ -93,10 +100,17 @@ impl Live {
         Some((back, add))
     }
 
-    /// The edit that brings the field in line with the final transcript; None
-    /// if the final pass came back empty, so it can't erase what was typed.
-    fn finish(&self, text: &str) -> Option<Edit> {
-        (!text.is_empty()).then(|| live::edit(&self.typed, text))
+    /// Brings the field in line with the final transcript, or copies it. None
+    /// if the final pass came back empty (silence, a double tap, an error), so
+    /// it can neither erase what was typed nor wipe the clipboard.
+    fn finish(&self, text: &str) -> Option<Finish> {
+        if text.is_empty() {
+            None
+        } else if self.to_clipboard {
+            Some(Finish::Copy(text.to_string()))
+        } else {
+            Some(Finish::Type(live::edit(&self.typed, text)))
+        }
     }
 
     /// The edit that erases what was typed so far (Esc), unless the user has
@@ -264,14 +278,10 @@ fn main() {
                 Err(TryRecvError::Empty) => pill.draw_thinking(t),
                 done => {
                     pill.hide();
-                    match done {
-                        Ok(text) if live.to_clipboard => copy(&text),
-                        Ok(text) => {
-                            if let Some((back, add)) = live.finish(&text) {
-                                type_text(back, &add);
-                            }
-                        }
-                        Err(_) => {}
+                    match done.ok().and_then(|text| live.finish(&text)) {
+                        Some(Finish::Type((back, add))) => type_text(back, &add),
+                        Some(Finish::Copy(text)) => copy(&text),
+                        None => {}
                     }
                     *state = State::Idle;
                 }
@@ -447,7 +457,11 @@ mod tests {
             live.commit("Hello world, how are".into()),
             Some((0, " world, how".into()))
         );
-        assert_eq!(live.finish("Hello world, how are you?"), Some((0, " are you?".into())));
+        assert_eq!(
+            live.finish("Hello world, how are you?"),
+            Some(Finish::Type((0, " are you?".into())))
+        );
+        assert_eq!(live.finish("Hello word, how"), Some(Finish::Type((7, "d, how".into()))));
         assert_eq!(live.finish(""), None); // a failed final pass keeps the text
         assert_eq!(live.cancel(), (16, String::new())); // "Hello world, how"
     }
@@ -468,6 +482,8 @@ mod tests {
         live.commit("Hello world".into());
         assert_eq!(live.commit("Hello world".into()), None);
         assert_eq!(live.cancel(), (0, String::new()));
+        assert_eq!(live.finish("Hello world"), Some(Finish::Copy("Hello world".into())));
+        assert_eq!(live.finish(""), None); // an accidental tap keeps the clipboard
     }
 
     #[test]
